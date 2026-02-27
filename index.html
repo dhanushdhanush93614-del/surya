@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Central Polytechnic College - Relay Control</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root { --bg:#0f172a; --card:#1e293b; --line:#334155; --txt:#e2e8f0; --on:#16a34a; --off:#dc2626; }
+    body { margin:0; font-family:Arial, sans-serif; background:var(--bg); color:var(--txt); }
+    .wrap { max-width:900px; margin:24px auto; padding:16px; }
+    .topbar {
+      display:flex; align-items:center; gap:12px; background:var(--card);
+      border:1px solid var(--line); border-radius:12px; padding:10px 14px;
+    }
+    .logo { width:52px; height:52px; object-fit:contain; background:#fff; border-radius:8px; }
+    .title { font-size:22px; font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .status { margin:14px 0; font-weight:700; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+    .name { font-size:18px; margin-bottom:8px; }
+    .state { margin-bottom:10px; font-weight:700; }
+    button { border:none; padding:10px 14px; border-radius:8px; color:white; cursor:pointer; font-weight:700; }
+    .on { background:var(--on); margin-right:8px; }
+    .off { background:var(--off); }
+  </style>
+</head>0
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <img id="logo1" class="logo" src="https://res.cloudinary.com/dhbk06c6b/image/upload/v1772204365/52409f39-2ad8-4334-92ba-eb5dad3d6254_x8wjcu.jpg" alt="Logo 1">
+      <img id="logo2" class="logo" src="https://res.cloudinary.com/dhbk06c6b/image/upload/v1772204536/WhatsApp_Image_2026-02-27_at_8.29.12_PM_k6ul8t.jpg " alt="Logo 2">
+      <div class="title">CPT COLLEGE</div>
+    </div>
+
+    <div id="mqttStatus" class="status">MQTT: Connecting...</div>
+
+    <div class="grid" id="relayGrid"></div>
+  </div>
+
+  <script>
+    // Paste your real logo URLs here
+    const LOGO1_URL = "https://res.cloudinary.com/dhbk06c6b/image/upload/v1772204365/52409f39-2ad8-4334-92ba-eb5dad3d6254_x8wjcu.jpg";
+    const LOGO2_URL = "https://res.cloudinary.com/dhbk06c6b/image/upload/v1772204536/WhatsApp_Image_2026-02-27_at_8.29.12_PM_k6ul8t.jpg";
+    document.getElementById("logo1").src = LOGO1_URL;
+    document.getElementById("logo2").src = LOGO2_URL;
+
+    // MQTT (WebSocket TLS)
+    const MQTT_URL = "wss://u660b616.ala.eu-central-1.emqxsl.com:8084/mqtt";
+    const MQTT_USERNAME = "suryasurya";
+    const MQTT_PASSWORD = "suryasurya";
+
+    // 5 relays mapped to ESP32 pins: 23,22,21,19,18
+    const RELAYS = [
+      { id: 1, pin: 23 },
+      { id: 2, pin: 22 },
+      { id: 3, pin: 21 },
+      { id: 4, pin: 19 },
+      { id: 5, pin: 18 }
+    ];
+
+    // Topics
+    const topicSet = (id) => `smartdb/relay/ch${id}/set`;     // publish ON/OFF
+    const topicState = (id) => `smartdb/relay/ch${id}/state`; // subscribe ON/OFF
+
+    const relayGrid = document.getElementById("relayGrid");
+    const mqttStatus = document.getElementById("mqttStatus");
+    const state = {};
+
+    function drawCards() {
+      relayGrid.innerHTML = "";
+      RELAYS.forEach(r => {
+        const s = state[r.id] || "OFF";
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <div class="name">Relay ${r.id} (GPIO ${r.pin})</div>
+          <div class="state">State: <span id="st${r.id}">${s}</span></div>
+          <button class="on" onclick="setRelay(${r.id}, 'ON')">ON</button>
+          <button class="off" onclick="setRelay(${r.id}, 'OFF')">OFF</button>
+        `;
+        relayGrid.appendChild(card);
+      });
+    }
+
+    const client = mqtt.connect(MQTT_URL, {
+      username: MQTT_USERNAME,
+      password: MQTT_PASSWORD,
+      reconnectPeriod: 1000,
+      connectTimeout: 10000,
+      keepalive: 30
+    });
+
+    client.on("connect", () => {
+      mqttStatus.textContent = "MQTT: Connected";
+      RELAYS.forEach(r => client.subscribe(topicState(r.id), { qos: 1 }));
+    });
+
+    client.on("reconnect", () => mqttStatus.textContent = "MQTT: Reconnecting...");
+    client.on("error", () => mqttStatus.textContent = "MQTT: Error");
+    client.on("offline", () => mqttStatus.textContent = "MQTT: Offline");
+
+    client.on("message", (topic, payload) => {
+      const msg = payload.toString().toUpperCase();
+      RELAYS.forEach(r => {
+        if (topic === topicState(r.id)) {
+          state[r.id] = (msg === "ON") ? "ON" : "OFF";
+          const el = document.getElementById(`st${r.id}`);
+          if (el) el.textContent = state[r.id];
+        }
+      });
+    });
+
+    function setRelay(id, cmd) {
+      client.publish(topicSet(id), cmd, { qos: 1, retain: true });
+    }
+    window.setRelay = setRelay;
+
+    drawCards();
+  </script>
+</body>
+</html>
